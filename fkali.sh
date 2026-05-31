@@ -8,7 +8,15 @@ export NEEDRESTART_SUSPEND=1
 # Exit on error, but handle specific failures gracefully
 set -e
 
-# Setup Logging
+# --- PRE-FLIGHT CHECKS (BEFORE LOGGING SETUP) ---
+
+# 1. Verify script is run with appropriate privileges FIRST
+if [[ $EUID -ne 0 ]] && ! sudo -n true 2>/dev/null; then
+    echo "[!] ERROR: This script requires sudo privileges. Please configure passwordless sudo or run with sudo."
+    exit 1
+fi
+
+# Setup Logging (after privilege check)
 LOG_FILE="/var/log/kali_self_heal.log"
 exec > >(tee -i $LOG_FILE) 2>&1
 
@@ -28,11 +36,6 @@ echo "[*] Date: $(date)"
 
 # --- PRE-FLIGHT CHECKS ---
 show_progress "5% - Pre-flight Checks"
-
-# 1. Verify script is run with appropriate privileges
-if [[ $EUID -ne 0 ]] && ! sudo -n true 2>/dev/null; then
-    error_exit "This script requires sudo privileges. Please configure passwordless sudo or run with sudo."
-fi
 
 # 2. Check for Internet (try multiple DNS servers for reliability)
 echo "[*] Checking internet connectivity..."
@@ -64,7 +67,14 @@ show_progress "15% - Fixing Mirrors & Keys"
 # Ensure the official Kali sources are present
 echo "deb http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" | sudo tee /etc/apt/sources.list >/dev/null
 echo "[*] Downloading and installing Kali archive keyring..."
-if ! wget -q -O - https://archive.kali.org/archive-key.asc 2>/dev/null | gpg --dearmor 2>/dev/null | sudo tee /etc/apt/trusted.gpg.d/kali-archive-keyring.gpg > /dev/null; then
+
+# Use set +e for this pipeline to handle failures gracefully
+set +e
+wget -q -O - https://archive.kali.org/archive-key.asc 2>/dev/null | gpg --dearmor 2>/dev/null | sudo tee /etc/apt/trusted.gpg.d/kali-archive-keyring.gpg > /dev/null
+KEYRING_STATUS=$?
+set -e
+
+if [ $KEYRING_STATUS -ne 0 ]; then
     echo "[!] WARNING: Failed to update Kali archive keyring. Continuing anyway..."
 fi
 
@@ -100,7 +110,13 @@ echo "[*] Cleaning old journal logs..."
 sudo journalctl --vacuum-time=1d
 
 echo "[*] Removing old kernel packages..."
-sudo apt-get purge $(dpkg -l | awk '/^rc/ { print $2 }') -y 2>/dev/null || true
+# Check if there are actually packages to remove first
+PACKAGES_TO_REMOVE=$(dpkg -l | awk '/^rc/ { print $2 }' | tr '\n' ' ')
+if [ -n "$PACKAGES_TO_REMOVE" ]; then
+    sudo apt-get purge $PACKAGES_TO_REMOVE -y 2>/dev/null || echo "[!] WARNING: Failed to remove some packages"
+else
+    echo "[*] No obsolete packages to remove."
+fi
 
 show_progress "95% - History & Filesystem Sync"
 # Repair ZSH history safely
@@ -124,9 +140,14 @@ for TARGET_HIST in "$USER_HOME/.zsh_history" "/root/.zsh_history"; do
         # Use a safer method: validate and reconstruct if needed
         if sudo file "$TARGET_HIST" 2>/dev/null | grep -q "data"; then
             echo "[*] History file appears corrupted, attempting repair..."
-            sudo strings "$TARGET_HIST" > "${TARGET_HIST}.tmp" 2>/dev/null && \
-            sudo mv "${TARGET_HIST}.tmp" "$TARGET_HIST" || \
-            echo "[!] WARNING: Could not repair $TARGET_HIST"
+            # Use a temp file in /var/tmp (more reliable than /tmp)
+            TEMP_HIST=$(mktemp /var/tmp/zsh_hist.XXXXXX)
+            if sudo strings "$TARGET_HIST" > "$TEMP_HIST" 2>/dev/null && [ -s "$TEMP_HIST" ]; then
+                sudo mv "$TEMP_HIST" "$TARGET_HIST" && echo "[*] Successfully repaired $TARGET_HIST"
+            else
+                echo "[!] WARNING: Could not repair $TARGET_HIST"
+                rm -f "$TEMP_HIST"
+            fi
         fi
         
         # Fix ownership if needed
