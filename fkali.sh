@@ -6,7 +6,7 @@ export NEEDRESTART_MODE=a
 export NEEDRESTART_SUSPEND=1 
 
 # Exit on error, but handle specific failures gracefully
-set -e
+set +e
 
 # Setup Logging
 LOG_FILE="/var/log/kali_self_heal.log"
