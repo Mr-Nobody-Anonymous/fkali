@@ -210,8 +210,8 @@ sudo apt-get install --reinstall -y kali-archive-keyring || echo "[!] WARNING: F
 #     (forensics, web pentest, reverse engineering). Run with --install-tools.
 if [ "$INSTALL_TOOLS" -eq 1 ]; then
     show_progress "80% - Installing Tool Category Metapackages"
-    echo "[*] Installing kali-tools-forensics, kali-tools-web, kali-tools-reverse-engineering..."
-    for PKG in kali-tools-forensics kali-tools-web kali-tools-reverse-engineering; do
+    echo "[*] Installing kali-linux-large, kali-tools-forensics, kali-tools-web, kali-tools-reverse-engineering..."
+    for PKG in kali-linux-large kali-tools-forensics kali-tools-web kali-tools-reverse-engineering; do
         echo "[*] Installing $PKG (with retry)..."
         retry 2 10 "sudo apt-get install -y $PKG" || echo "[!] WARNING: $PKG failed to install fully, continuing..."
     done
