@@ -1,0 +1,12 @@
+# Logs produced by test runs
+*.log
+kali_self_heal.log
+
+# Backups produced by fkali.sh
+*.fkali-backup-*
+*.backup
+
+# Editor / OS noise
+*~
+*.swp
+.DS_Store

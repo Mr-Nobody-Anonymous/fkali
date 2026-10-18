@@ -1,0 +1,52 @@
+name: CI
+
+"on":
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  shellcheck:
+    name: ShellCheck + smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Syntax check
+        run: bash -n fkali.sh tests/fkali_test.sh
+
+      - name: Lint (must be clean)
+        run: shellcheck fkali.sh tests/fkali_test.sh
+
+      - name: Unit tests
+        run: ./tests/fkali_test.sh
+
+      - name: Script is executable
+        run: test -x fkali.sh
+
+      - name: --help and --version work
+        run: |
+          ./fkali.sh --help > /dev/null
+          ./fkali.sh --version | grep -q '^fkali '
+
+      - name: Unknown options are rejected
+        run: |
+          if ./fkali.sh --no-such-option; then
+            echo "ERROR: unknown option was accepted" >&2
+            exit 1
+          fi
+
+      - name: Dry-run smoke test (changes nothing)
+        run: |
+          timeout 120 ./fkali.sh --dry-run --install-tools > dry-run.txt 2>&1
+          grep -q 'DRY-RUN COMPLETE' dry-run.txt
+          grep -q 'kali.sources' dry-run.txt
+          cat dry-run.txt
